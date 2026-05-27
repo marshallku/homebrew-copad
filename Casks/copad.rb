@@ -37,6 +37,18 @@ cask "copad" do
       dst = File.join(plugins_dst, File.basename(src))
       FileUtils.rm_r(dst) if File.exist?(dst)
       FileUtils.cp_r(src, dst)
+      # Strip the com.apple.quarantine xattr from copied plugin binaries.
+      # brew Cask's `app` + `binary` stanzas auto-strip quarantine, but
+      # plugin binaries get copied here via postflight Ruby — Cask has no
+      # idea they exist, so quarantine is preserved on extraction. On
+      # macOS 26+ (Tahoe) the kernel does not just block quarantined
+      # ad-hoc-signed binaries from execve, it deletes them — so the
+      # supervisor's first `fork+exec` of a plugin produces ENOENT instead
+      # of EACCES. Recursive strip on the copied dir covers the plugin
+      # binary itself (every plugin manifest + assets are non-executable
+      # data, so the xattr has no effect on them).
+      system("/usr/bin/xattr", "-dr", "com.apple.quarantine", dst,
+             out: File::NULL, err: File::NULL)
     end
 
     # Shell hooks for live-cwd reporting (sourced from user's rc file).
