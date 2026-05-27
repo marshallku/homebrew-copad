@@ -9,7 +9,7 @@ cask "copad" do
 
   # Info.plist sets LSMinimumSystemVersion 14.0. arm64-only artifact today;
   # Intel users build from source via scripts/install-macos.sh.
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
   depends_on arch: :arm64
 
   # Tarball layout produced by .github/workflows/release.yml (build-macos):
@@ -33,8 +33,9 @@ cask "copad" do
     FileUtils.mkdir_p(plugins_dst)
     Dir.glob("#{staged_path}/plugins/*").each do |src|
       next unless File.directory?(src)
+
       dst = File.join(plugins_dst, File.basename(src))
-      FileUtils.rm_rf(dst)
+      FileUtils.rm_r(dst)
       FileUtils.cp_r(src, dst)
     end
 
@@ -85,22 +86,22 @@ cask "copad" do
     File.write(plist_dst, plist_body)
   end
 
-  # `launchctl:` handles bootout-on-uninstall. `quit:` sends an Apple Event
-  # to the GUI app via its bundle id. `pkill:` catches the daemon if quit
-  # left it running. `delete:` removes the plist we wrote in postflight,
-  # since brew only tracks artifacts declared in the cask DSL.
+  # `launchctl:` boots the daemon out, which also tears down its running
+  # instance — no separate `signal:` needed for copadd. `quit:` sends an
+  # Apple Event to the GUI app via its bundle id. `delete:` removes the
+  # plist we wrote in postflight, since brew only tracks artifacts declared
+  # in the cask DSL itself.
   uninstall launchctl: "com.marshall.copad.daemon",
             quit:      "com.marshall.copad",
-            pkill:     "copadd",
             delete:    "~/Library/LaunchAgents/com.marshall.copad.daemon.plist"
 
   # `zap` runs only on `brew uninstall --zap copad` — destroys user state.
   zap trash: [
+    "~/.config/copad",
     "~/Library/Application Support/copad",
     "~/Library/Caches/copad",
-    "~/Library/Saved Application State/com.marshall.copad.savedState",
-    "~/Library/Logs/copad-daemon.out.log",
     "~/Library/Logs/copad-daemon.err.log",
-    "~/.config/copad",
+    "~/Library/Logs/copad-daemon.out.log",
+    "~/Library/Saved Application State/com.marshall.copad.savedState",
   ]
 end
