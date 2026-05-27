@@ -35,7 +35,7 @@ cask "copad" do
       next unless File.directory?(src)
 
       dst = File.join(plugins_dst, File.basename(src))
-      FileUtils.rm_r(dst)
+      FileUtils.rm_r(dst) if File.exist?(dst)
       FileUtils.cp_r(src, dst)
     end
 
@@ -84,6 +84,20 @@ cask "copad" do
     PLIST
     FileUtils.mkdir_p(File.dirname(plist_dst))
     File.write(plist_dst, plist_body)
+
+    # Bootstrap the LaunchAgent immediately so copadd is running before the
+    # user launches Copad.app. Without this the daemon would only come up at
+    # next login — and AutoSpawn (the GUI's fallback) only searches inherited
+    # PATH + ~/.cargo/bin + /opt/homebrew/bin; a Finder launch on a fresh
+    # install where copadd lives only in HOMEBREW_PREFIX/bin still works
+    # because of the /opt/homebrew/bin fallback added for brew users, but
+    # bootstrapping here means the daemon is up *before* the GUI ever asks,
+    # which keeps the status bar / plugins / triggers responsive from first
+    # launch. `bootout` first makes this idempotent on reinstall.
+    domain = "gui/#{Process.uid}"
+    label = "com.marshall.copad.daemon"
+    system("/bin/launchctl", "bootout", "#{domain}/#{label}", out: File::NULL, err: File::NULL)
+    system("/bin/launchctl", "bootstrap", domain, plist_dst)
   end
 
   # `launchctl:` boots the daemon out, which also tears down its running
