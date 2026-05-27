@@ -8,7 +8,8 @@ cask "copad" do
   homepage "https://github.com/marshallku/copad"
 
   # Info.plist sets LSMinimumSystemVersion 14.0. arm64-only artifact today;
-  # Intel users build from source via scripts/install-macos.sh.
+  # Intel users build from source via scripts/install-macos.sh. Upper bound
+  # via the preflight check below — see the depends_on note.
   depends_on macos: :sonoma
   depends_on arch: :arm64
 
@@ -22,6 +23,33 @@ cask "copad" do
   app "Copad.app"
   binary "coctl"
   binary "copadd"
+
+  preflight do
+    # macOS 26 (Tahoe) and later: App Verification deletes ad-hoc-signed
+    # executables on `launchd` spawn, which means `copadd` and the plugin
+    # binaries shipped in this tarball self-delete the first time they run.
+    # `depends_on macos:` in the Cask DSL only supports a LOWER bound, so
+    # this check is the only way to fail-fast on a Tahoe install before
+    # users discover the breakage post-postflight. install-macos.sh signs
+    # with a locally-trusted self-signed identity (scripts/codesign-dev.sh)
+    # which survives Tahoe's verification, so we redirect users there.
+    if MacOS.version >= :tahoe
+      odie <<~ERROR
+        copad's brew cask is unsupported on macOS #{MacOS.version} (Tahoe and later).
+        Tahoe's App Verification deletes ad-hoc-signed executables on first
+        `launchd` spawn, which breaks copadd and its plugins. Install from
+        source instead — that path signs the bundle with a locally-trusted
+        identity that Tahoe accepts:
+
+            git clone https://github.com/marshallku/copad.git
+            cd copad
+            ./scripts/install-macos.sh
+
+        See https://github.com/marshallku/copad/blob/master/docs/decisions.md
+        decision #45 for the full background.
+      ERROR
+    end
+  end
 
   postflight do
     require "fileutils"
