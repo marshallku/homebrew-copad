@@ -1,6 +1,6 @@
 cask "copad" do
   version "0.2.0"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "13afbff0ccbd9ec40b4d94b51f4828350474bc7962c3f1affc29fc1ed8305f4a"
 
   url "https://github.com/marshallku/copad/releases/download/v#{version}/copad-v#{version}-aarch64-apple-darwin.tar.gz"
   name "copad"
