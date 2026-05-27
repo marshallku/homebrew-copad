@@ -97,7 +97,15 @@ cask "copad" do
     domain = "gui/#{Process.uid}"
     label = "com.marshall.copad.daemon"
     system("/bin/launchctl", "bootout", "#{domain}/#{label}", out: File::NULL, err: File::NULL)
-    system("/bin/launchctl", "bootstrap", domain, plist_dst)
+    # `bootstrap` failure is rare but possible (e.g., a stale plist at the
+    # same label that bootout did not clean). Warn but do not fail the
+    # cask install — copadd will still come up at next login, and the user
+    # can `launchctl load` it manually now. Hard-failing here would block
+    # `brew install` on an edge case the user can fix in 5 seconds.
+    unless system("/bin/launchctl", "bootstrap", domain, plist_dst)
+      opoo "launchctl bootstrap failed for #{label} — " \
+           "run `launchctl load #{plist_dst}` manually, or it will start at next login."
+    end
   end
 
   # `launchctl:` boots the daemon out, which also tears down its running
