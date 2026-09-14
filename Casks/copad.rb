@@ -1,15 +1,27 @@
+# typed: false
+# frozen_string_literal: true
+
+# GENERATED FILE — do not edit in the tap.
+# Source of truth: marshallku/copad → dist/homebrew/copad.rb.tmpl
+# Rendered and pushed to marshallku/homebrew-copad by .github/workflows/homebrew.yml
+# on every release tag. Local edits to Casks/copad.rb are overwritten by the next
+# release; change the template in the copad repo instead.
 cask "copad" do
-  version "0.2.0"
-  sha256 "13afbff0ccbd9ec40b4d94b51f4828350474bc7962c3f1affc29fc1ed8305f4a"
+  version "1.2.0"
+  sha256 "9e9b2ef7e6c390cee9bafeb892f7c54bae71f6c6c074452cd60e44d67bd2eed3"
 
   url "https://github.com/marshallku/copad/releases/download/v#{version}/copad-v#{version}-aarch64-apple-darwin.tar.gz"
   name "copad"
   desc "Cross-platform custom terminal emulator with shared Rust core"
   homepage "https://github.com/marshallku/copad"
 
+  livecheck do
+    url :url
+    strategy :github_latest
+  end
+
   # Info.plist sets LSMinimumSystemVersion 14.0. arm64-only artifact today;
-  # Intel users build from source via scripts/install-macos.sh. Upper bound
-  # via the preflight check below — see the depends_on note.
+  # Intel users build from source via scripts/install-macos.sh.
   depends_on macos: :sonoma
   depends_on arch: :arm64
 
@@ -17,6 +29,7 @@ cask "copad" do
   #   Copad.app/
   #   coctl
   #   copadd
+  #   comux
   #   plugins/<name>/{copad-plugin-<name>, plugin.toml, panel.html?, triggers.example.toml?}
   #   shell-hooks/copad-cwd.{bash,zsh,fish}
   #   com.marshall.copad.daemon.plist   (HOME_PLACEHOLDER unsubstituted)
@@ -24,32 +37,16 @@ cask "copad" do
   binary "coctl"
   binary "copadd"
 
-  preflight do
-    # macOS 26 (Tahoe) and later: App Verification deletes ad-hoc-signed
-    # executables on `launchd` spawn, which means `copadd` and the plugin
-    # binaries shipped in this tarball self-delete the first time they run.
-    # `depends_on macos:` in the Cask DSL only supports a LOWER bound, so
-    # this check is the only way to fail-fast on a Tahoe install before
-    # users discover the breakage post-postflight. install-macos.sh signs
-    # with a locally-trusted self-signed identity (scripts/codesign-dev.sh)
-    # which survives Tahoe's verification, so we redirect users there.
-    if MacOS.version >= :tahoe
-      odie <<~ERROR
-        copad's brew cask is unsupported on macOS #{MacOS.version} (Tahoe and later).
-        Tahoe's App Verification deletes ad-hoc-signed executables on first
-        `launchd` spawn, which breaks copadd and its plugins. Install from
-        source instead — that path signs the bundle with a locally-trusted
-        identity that Tahoe accepts:
+  # `comux` is deliberately NOT linked here even though the tarball carries it:
+  # the standalone `comux` formula in this tap owns that name, and two artifacts
+  # symlinking HOMEBREW_PREFIX/bin/comux would collide at install time. Cask
+  # users who want the multiplexer run `brew install marshallku/copad/comux`.
 
-            git clone https://github.com/marshallku/copad.git
-            cd copad
-            ./scripts/install-macos.sh
-
-        See https://github.com/marshallku/copad/blob/master/docs/decisions.md
-        decision #45 for the full background.
-      ERROR
-    end
-  end
+  # No Tahoe preflight guard: since the release CI gained Developer ID signing +
+  # notarization (every Mach-O signed with a hardened runtime and secure
+  # timestamp, Copad.app notarized and stapled), macOS 26's App Verification no
+  # longer deletes copadd / the plugin binaries on first launchd spawn. The
+  # guard that used to `odie` here was the ad-hoc-signing era's fail-fast.
 
   postflight do
     require "fileutils"
@@ -68,13 +65,10 @@ cask "copad" do
       # Strip the com.apple.quarantine xattr from copied plugin binaries.
       # brew Cask's `app` + `binary` stanzas auto-strip quarantine, but
       # plugin binaries get copied here via postflight Ruby — Cask has no
-      # idea they exist, so quarantine is preserved on extraction. On
-      # macOS 26+ (Tahoe) the kernel does not just block quarantined
-      # ad-hoc-signed binaries from execve, it deletes them — so the
-      # supervisor's first `fork+exec` of a plugin produces ENOENT instead
-      # of EACCES. Recursive strip on the copied dir covers the plugin
-      # binary itself (every plugin manifest + assets are non-executable
-      # data, so the xattr has no effect on them).
+      # idea they exist, so quarantine is preserved on extraction. The
+      # binaries are Developer-ID-signed, but a quarantined signed binary
+      # still gets a Gatekeeper prompt the supervisor cannot answer, so
+      # strip it recursively (manifests + assets are inert data).
       system("/usr/bin/xattr", "-dr", "com.apple.quarantine", dst,
              out: File::NULL, err: File::NULL)
     end
@@ -86,12 +80,61 @@ cask "copad" do
       FileUtils.cp(src, File.join(hooks_dst, File.basename(src)))
     end
 
-    # LaunchAgent. The brew `binary` stanza above symlinks copadd into
-    # HOMEBREW_PREFIX/bin, so the plist points there directly — no
-    # HOME_PLACEHOLDER substitution needed (launchd does not expand `~`,
-    # which is why the in-repo plist ships with a placeholder for the dev
-    # install path). Write the plist fresh each install so a HOMEBREW_PREFIX
-    # change (Intel → arm64 reinstall, custom prefix) is reflected.
+    # LaunchAgent. ProgramArguments runs copadd through the copadd-launch.sh
+    # wrapper the release tarball ships — NOT the binary directly. The wrapper
+    # is what sources ~/.config/copad/secrets.env (mode 600, so plugin bearer
+    # tokens like COPAD_WEB_BRIDGE_TOKEN never sit in this world-readable
+    # plist), puts the Homebrew bin dirs on the launchd-minimal PATH (plugins
+    # shell out to tmux/git), and defaults LANG to UTF-8 (without it tmux
+    # rewrites its format separators and the web-bridge pane list comes back
+    # empty). install.sh and scripts/install-macos.sh both wire it this way;
+    # a cask that ran the bare binary would silently ship a degraded daemon.
+    config_dir = File.expand_path("~/.config/copad")
+    FileUtils.mkdir_p(config_dir)
+
+    wrapper_src = "#{staged_path}/copadd-launch.sh"
+    wrapper_dst = File.join(config_dir, "copadd-launch.sh")
+    if File.exist?(wrapper_src)
+      FileUtils.cp(wrapper_src, wrapper_dst)
+      FileUtils.chmod(0755, wrapper_dst)
+    end
+
+    # Mint the web-bridge bearer token once, and never overwrite it — a paired
+    # phone keeps working across upgrades. O_EXCL + mode 600 so the token is
+    # never briefly world-readable and a concurrent install cannot clobber it.
+    require "securerandom"
+    secrets_env = File.join(config_dir, "secrets.env")
+    begin
+      File.open(secrets_env, File::WRONLY | File::CREAT | File::EXCL, 0600) do |f|
+        f.write("COPAD_WEB_BRIDGE_TOKEN=#{SecureRandom.hex(24)}\n")
+      end
+    rescue Errno::EEXIST
+      FileUtils.chmod(0600, secrets_env)
+    end
+
+    # Pin the copadd the wrapper should exec. Its own fallback search covers
+    # /opt/homebrew/bin and /usr/local/bin, but not a custom HOMEBREW_PREFIX —
+    # and a KeepAlive agent that execs the wrong copy restarts forever.
+    File.write(File.join(config_dir, "copadd.path"), "#{HOMEBREW_PREFIX}/bin/copadd\n")
+
+    # `~` is not expanded by launchd, so every path below is absolute. XML-escape
+    # them: a home directory containing & or < would otherwise produce a plist
+    # launchd refuses to parse.
+    xml = ->(s) { s.to_s.gsub("&", "&amp;").gsub("<", "&lt;").gsub(">", "&gt;") }
+    program_args =
+      if File.exist?(wrapper_dst)
+        "    <string>/bin/sh</string>\n    <string>#{xml.call(wrapper_dst)}</string>"
+      else
+        # Defensive: an artifact without the wrapper still gets a working
+        # daemon (minus secrets/PATH) rather than a plist pointing at a
+        # missing script, which launchd would respawn in a tight loop.
+        opoo "copadd-launch.sh missing from the release tarball — the LaunchAgent " \
+             "will run copadd directly, so ~/.config/copad/secrets.env is not applied."
+        "    <string>#{xml.call("#{HOMEBREW_PREFIX}/bin/copadd")}</string>"
+      end
+
+    # Write the plist fresh each install so a HOMEBREW_PREFIX change
+    # (Intel → arm64 reinstall, custom prefix) is reflected.
     plist_dst = File.expand_path("~/Library/LaunchAgents/com.marshall.copad.daemon.plist")
     plist_body = <<~PLIST
       <?xml version="1.0" encoding="UTF-8"?>
@@ -102,16 +145,16 @@ cask "copad" do
         <string>com.marshall.copad.daemon</string>
         <key>ProgramArguments</key>
         <array>
-          <string>#{HOMEBREW_PREFIX}/bin/copadd</string>
+      #{program_args}
         </array>
         <key>RunAtLoad</key>
         <true/>
         <key>KeepAlive</key>
         <true/>
         <key>StandardOutPath</key>
-        <string>#{Dir.home}/Library/Logs/copad-daemon.out.log</string>
+        <string>#{xml.call("#{Dir.home}/Library/Logs/copad-daemon.out.log")}</string>
         <key>StandardErrorPath</key>
-        <string>#{Dir.home}/Library/Logs/copad-daemon.err.log</string>
+        <string>#{xml.call("#{Dir.home}/Library/Logs/copad-daemon.err.log")}</string>
         <key>EnvironmentVariables</key>
         <dict>
           <key>RUST_LOG</key>
