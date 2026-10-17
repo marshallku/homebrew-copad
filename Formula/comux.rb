@@ -18,7 +18,7 @@ class Comux < Formula
   license "MIT"
   # No explicit `version` stanza: Homebrew scans it out of the release URL, and
   # `brew audit` rejects the redundant declaration. The URLs below still carry
-  # 1.2.0 so the render step is what pins it.
+  # 1.2.1 so the render step is what pins it.
 
   # A plain conditional, not `on_macos do … end`: the Homebrew style cops reject
   # `url`/`sha256` inside an on_system block (`brew style` → FormulaAudit/
@@ -28,8 +28,8 @@ class Comux < Formula
   if OS.mac?
     depends_on arch: :arm64
 
-    url "https://github.com/marshallku/copad/releases/download/v1.2.0/comux-v1.2.0-aarch64-apple-darwin"
-    sha256 "22927f61b68e86ea293c30aaf1ca45bae8ecdfbc3c4c14cd64e69a6680be0dca"
+    url "https://github.com/marshallku/copad/releases/download/v1.2.1/comux-v1.2.1-aarch64-apple-darwin"
+    sha256 "555c5b829024cb8c2609544aba45002f01c65059466edb25aa3d30e79e737a99"
   else
     depends_on arch: :x86_64
 
@@ -38,8 +38,8 @@ class Comux < Formula
     # (the glibc build needs 2.39+), and brew's own glibc formula does not help
     # a prebuilt binary that the system loader resolves. The static build has no
     # libc dependency at all, so it runs on every supported host.
-    url "https://github.com/marshallku/copad/releases/download/v1.2.0/comux-v1.2.0-x86_64-linux-musl"
-    sha256 "6bd755a37df1df892ce70be32f36e0f5d245b60bb670a9fe3563ad11199fafdf"
+    url "https://github.com/marshallku/copad/releases/download/v1.2.1/comux-v1.2.1-x86_64-linux-musl"
+    sha256 "81e12aa37fb9036eed94afc688c2817e7a50685852a71c14c6e216c47e5139ed"
   end
 
   def install
