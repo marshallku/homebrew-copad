@@ -7,8 +7,8 @@
 # on every release tag. Local edits to Casks/copad.rb are overwritten by the next
 # release; change the template in the copad repo instead.
 cask "copad" do
-  version "1.2.1"
-  sha256 "a36fdbefdeae7087fb32e9617ec893b1a77452998ee331472cca74d09b140e13"
+  version "1.2.2"
+  sha256 "90c140dcc548f3081de9099997d399404faa74ba62da724f4b1d1cc95d2ce021"
 
   url "https://github.com/marshallku/copad/releases/download/v#{version}/copad-v#{version}-aarch64-apple-darwin.tar.gz"
   name "copad"
